@@ -20,6 +20,10 @@
 
   // ---------- Helpers ----------
   const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
+  const dist2 = (ax, ay, bx, by) => {
+    const dx = ax - bx, dy = ay - by;
+    return dx * dx + dy * dy;
+  };
 
   function resizeCanvas() {
     const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
@@ -33,14 +37,13 @@
     return { w, h, dpr };
   }
 
-  function groundY() {
-    return canvas.height * 0.84;
-  }
+  function floorY() { return canvas.height * 0.84; }
+  function ceilY() { return canvas.height * 0.18; } // ceiling lane
 
   function enterPlayUI() { document.body.classList.add("playmode"); }
   function exitPlayUI() { document.body.classList.remove("playmode"); }
 
-  // ---------- Audio (very light) ----------
+  // ---------- Audio (light) ----------
   let audioCtx = null;
   let music = null;
 
@@ -65,8 +68,10 @@
   }
 
   const sfx = {
-    jump(){ beep("square", 650, 0.06, 0.06); },
+    jump(){ beep("square", 680, 0.06, 0.06); },
+    orb(){  beep("triangle", 960, 0.08, 0.06); },
     pad(){  beep("triangle", 880, 0.08, 0.06); },
+    flip(){ beep("sawtooth", 420, 0.09, 0.06); },
     die(){  beep("sawtooth", 160, 0.12, 0.08); },
     win(){  beep("triangle", 980, 0.10, 0.06); },
   };
@@ -100,7 +105,7 @@
     o1.start(); o2.start();
 
     const bpm = 126;
-    const stepDur = (60 / bpm) / 2; // 8ths
+    const stepDur = (60 / bpm) / 2;
     const seq = [0, 7, 12, 7, 0, 10, 12, 10];
     const base = 220;
     let step = 0;
@@ -145,60 +150,86 @@
   })();
   function saveBest(){ try { localStorage.setItem(bestKey, JSON.stringify(bestById)); } catch {} }
 
-  // ---------- Levels (OG-ish: spikes, blocks, pads) ----------
-  // type: 0=spike, 1=block, 2=pad
+  // ---------- Types ----------
+  // 0 spike (floor)
+  // 1 block (floor)
+  // 2 pad   (floor)
+  // 3 orb   (air)    [3, x, yFromTop, radius]
+  // 4 portal(gravity flip) (air) [4, x, yFromTop, w, h]
+  //
+  // For floor stuff arrays are: [type, x, w, h]
+
+  // ---------- Levels (OG-ish) ----------
   const LEVELS = [
     {
       id:"l1", name:"Neon Steps", diff:"Easy",
-      speed: 620, length: 6200,
+      speed: 620, length: 6400,
       obs: [
         [0,1700,46,56],
         [1,2100,90,110],
         [0,2500,46,56],
-        [2,2700,70,16],  // pad
-        [1,2860,110,170],
-        [0,3320,46,56],
-        [1,3650,100,140],
-        [0,4200,46,56],
-        [0,4380,46,56],
-        [1,4900,150,130],
-        [0,5480,46,56],
+
+        [3,2680, 310, 18],       // orb (tap in air)
+        [2,2860,70,16],           // pad
+        [1,3020,110,160],
+
+        [0,3500,46,56],
+        [1,3850,100,140],
+        [0,4400,46,56],
+
+        [3,4650, 290, 18],        // orb
+        [1,5000,150,135],
+        [0,5600,46,56],
       ]
     },
     {
       id:"l2", name:"Pulse Lane", diff:"Medium",
-      speed: 690, length: 7000,
+      speed: 690, length: 7200,
       obs: [
         [0,1700,46,56],
         [0,1880,46,56],
         [1,2300,120,170],
-        [0,2750,46,56],
-        [2,2960,70,16],
+
+        [3,2650, 305, 18],
+        [2,2950,70,16],
         [1,3120,160,150],
+
         [0,3650,46,56],
         [1,4020,120,230],
-        [0,4660,46,56],
-        [1,5050,180,160],
-        [0,5750,46,56],
-        [0,5930,46,56],
+
+        [4,4520, 260, 70, 130],   // gravity flip portal
+        [3,4900, 140, 18],         // ceiling-side orb (after flip)
+        [0,5200,46,56],
+
+        [4,5900, 260, 70, 130],   // flip back
+        [1,6250,180,160],
+        [0,6900,46,56],
       ]
     },
     {
       id:"l3", name:"Ion Rush", diff:"Hard",
-      speed: 740, length: 7600,
+      speed: 740, length: 7800,
       obs: [
         [0,1800,46,56],
         [1,2200,140,230],
+
+        [3,2550, 300, 18],
         [0,2700,46,56],
         [2,2920,70,16],
         [1,3080,200,160],
-        [0,3600,46,56],
-        [1,3950,140,280],
-        [0,4620,46,56],
-        [1,4980,240,170],
-        [0,5650,46,56],
-        [1,6000,160,320],
-        [0,6750,46,56],
+
+        [4,3600, 260, 70, 130],   // flip
+        [3,3920, 140, 18],
+        [1,4200,140,260],         // still floor block (danger if you drop)
+
+        [4,4680, 260, 70, 130],   // flip back
+        [0,5050,46,56],
+        [1,5400,240,170],
+
+        [3,5900, 290, 18],
+        [0,6300,46,56],
+        [1,6600,160,320],
+        [0,7350,46,56],
       ]
     }
   ];
@@ -225,38 +256,85 @@
   let state = "menu"; // menu | play
   let paused = false;
 
-  // physics (OG feel)
+  // physics (jump a little higher per your request)
   const GRAV = 2850;
-  const JUMP = 820;     // fair jump
-  const PADJ = 1240;    // yellow pad boost
+  const JUMP = 880;    // <- higher than before
+  const PADJ = 1260;
+  const ORBJ = 1050;   // orb boost
   const MAXF = -1750;
 
-  // forgiveness (feels good)
+  // forgiveness
   let coyote = 0;
   let buffer = 0;
   const COYOTE_MAX = 0.08;
   const BUFFER_MAX = 0.11;
 
-  // auto-restart
+  // orb tap (must tap while near orb)
+  let tapThisFrame = false;
+  let orbLock = 0; // prevents double-trigger spam
+
+  // gravity
+  // gravitySign = 1 means "normal floor"
+  // gravitySign = -1 means "ceiling mode"
+  let gravitySign = 1;
+
+  // auto restart
   let deadTimer = 0;
   const RESTART_IN = 0.75;
 
-  // world/player (y = height above ground)
+  // world/player
   const world = { x: 0, t: 0 };
-  const player = { x: 250, y: 0, vy: 0, r: 18, alive: true, onGround: true };
+  // offset = distance away from current surface (floor/ceiling)
+  const player = { x: 250, offset: 0, vy: 0, r: 18, alive: true, onSurface: true };
 
-  // lightweight visuals (no lag): stars + tiny trail (in arrays, re-used)
-  const starsA = new Float32Array(240); // x,y pairs 120
-  const starsB = new Float32Array(180); // x,y pairs 90
+  // visuals (fixed arrays, low lag)
+  const starsA = new Float32Array(240);
+  const starsB = new Float32Array(180);
   for (let i=0;i<starsA.length;i++) starsA[i] = Math.random();
   for (let i=0;i<starsB.length;i++) starsB[i] = Math.random();
 
+  // tiny trail
   const TRAIL_MAX = 18;
   const trailX = new Float32Array(TRAIL_MAX);
   const trailY = new Float32Array(TRAIL_MAX);
   let trailN = 0;
 
   function setStatus(t){ statusPillEl.textContent = t; }
+
+  function surfaceY() {
+    return gravitySign === 1 ? floorY() : ceilY();
+  }
+
+  function playerCenterY() {
+    const sY = surfaceY();
+    // if normal: cube above floor => y = floor - r - offset
+    // if inverted: cube below ceiling => y = ceiling + r + offset
+    return gravitySign === 1 ? (sY - player.r - player.offset) : (sY + player.r + player.offset);
+  }
+
+  function snapToSurface() {
+    player.offset = 0;
+    player.vy = 0;
+    player.onSurface = true;
+  }
+
+  function flipGravityKeepPosition() {
+    // keep the cube at the same screen Y when flipping
+    const py = playerCenterY();
+    gravitySign *= -1;
+
+    const sY = surfaceY();
+    if (gravitySign === 1) {
+      // offset = (floor - r) - py
+      player.offset = Math.max(0, (sY - player.r) - py);
+    } else {
+      // offset = py - (ceiling + r)
+      player.offset = Math.max(0, py - (sY + player.r));
+    }
+    player.vy = -player.vy;
+    player.onSurface = false;
+    sfx.flip();
+  }
 
   function goMenu() {
     exitPlayUI();
@@ -274,15 +352,21 @@
     paused = false;
     setStatus("Playing");
     screenTitleEl.textContent = selected.name;
-    screenSubEl.textContent = "tap to jump • don’t touch spikes";
+    screenSubEl.textContent = "tap to jump • orbs/portals enabled";
+
     if (musicToggle.checked) startMusic();
 
     world.x = 0; world.t = 0;
-    player.y = 0; player.vy = 0;
-    player.alive = true; player.onGround = true;
+    gravitySign = 1;
+    player.offset = 0; player.vy = 0;
+    player.alive = true; player.onSurface = true;
+
     coyote = COYOTE_MAX; buffer = 0;
     deadTimer = 0;
+    tapThisFrame = false;
+    orbLock = 0;
     trailN = 0;
+
     runPctEl.textContent = "0%";
   }
 
@@ -300,7 +384,6 @@
     const prog = clamp(world.x / selected.length, 0, 1);
     const prev = bestById[selected.id] || 0;
     if (prog > prev) { bestById[selected.id] = prog; saveBest(); renderLevels(); updateBestUI(); }
-    // go menu after a moment
     setTimeout(() => { if (state === "play") goMenu(); }, 900);
   }
 
@@ -309,10 +392,15 @@
   btnRestart.onclick = startRun;
   btnLevels.onclick = goMenu;
 
-  // input: queue jump only (space never starts)
   function queueJump() {
     if (state !== "play" || paused || !player.alive) return;
     buffer = BUFFER_MAX;
+  }
+
+  // tap used for orbs (and still jumps if on surface)
+  function registerTap() {
+    tapThisFrame = true;
+    queueJump();
   }
 
   window.addEventListener("keydown", (e) => {
@@ -320,11 +408,15 @@
     if (e.code === "Escape") { goMenu(); return; }
     if (e.code === "KeyP") { if (state === "play") paused = !paused; return; }
     if (e.code === "KeyR") { startRun(); return; }
-    if (e.code === "Space" || e.code === "ArrowUp") { queueJump(); }
+    if (e.code === "Space" || e.code === "ArrowUp") { registerTap(); }
   });
-  canvas.addEventListener("pointerdown", () => { ensureAudio(); queueJump(); });
 
-  // ---------- Collision (fast) ----------
+  canvas.addEventListener("pointerdown", () => {
+    ensureAudio();
+    registerTap();
+  });
+
+  // ---------- Collision ----------
   function rectCircle(rx, ry, rw, rh, cx, cy, cr) {
     const nx = cx < rx ? rx : cx > rx + rw ? rx + rw : cx;
     const ny = cy < ry ? ry : cy > ry + rh ? ry + rh : cy;
@@ -333,11 +425,9 @@
   }
 
   function spikeHit(sx, sy, w, h, cx, cy, cr) {
-    // base rectangle + tip circle approximation (cheap & good)
     if (rectCircle(sx, sy + h*0.55, w, h*0.45, cx, cy, cr)) return true;
     const tx = sx + w*0.5, ty = sy + 6;
-    const dx = cx - tx, dy = cy - ty;
-    return dx*dx + dy*dy <= cr*cr;
+    return dist2(cx, cy, tx, ty) <= cr*cr;
   }
 
   // ---------- Drawing ----------
@@ -364,7 +454,7 @@
     ctx.fillStyle = g;
     ctx.fillRect(0,0,w,h);
 
-    // stars (lite mode draws fewer)
+    // stars
     const lite = liteToggle.checked;
     ctx.save();
     ctx.globalAlpha = 0.8;
@@ -386,7 +476,7 @@
     }
     ctx.restore();
 
-    // grid (cheap)
+    // grid
     ctx.save();
     ctx.globalAlpha = 0.10;
     ctx.strokeStyle = "rgba(255,255,255,0.22)";
@@ -397,21 +487,91 @@
     ctx.restore();
   }
 
-  function drawGround() {
+  function drawLanes() {
     const w = canvas.width, h = canvas.height;
-    const gy = groundY();
+    const fy = floorY();
+    const cy = ceilY();
+
+    // floor lane
     ctx.fillStyle = "rgba(0,255,190,0.10)";
-    ctx.fillRect(0, gy, w, h-gy);
+    ctx.fillRect(0, fy, w, h-fy);
     ctx.strokeStyle = "rgba(0,255,190,0.60)";
     ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.moveTo(0,gy); ctx.lineTo(w,gy); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0,fy); ctx.lineTo(w,fy); ctx.stroke();
+
+    // ceiling lane
+    ctx.strokeStyle = "rgba(130,140,255,0.60)";
+    ctx.beginPath(); ctx.moveTo(0,cy); ctx.lineTo(w,cy); ctx.stroke();
   }
 
-  function drawObstacle(type, x, w, h) {
-    const gy = groundY();
-    const y = gy - h;
+  // OG-style deco: neon pillars + fake gears (visual only)
+  function drawDecor(ts) {
+    if (liteToggle.checked) return;
 
-    if (type === 1) { // block
+    const w = canvas.width;
+    const fy = floorY();
+    const cy = ceilY();
+    const base = Math.floor(world.x / 400) * 400;
+
+    for (let k = -2; k < 6; k++) {
+      const xWorld = base + k * 400;
+      const x = xWorld - world.x;
+
+      // pillars
+      ctx.save();
+      ctx.globalAlpha = 0.25;
+      ctx.fillStyle = "rgba(130,140,255,0.20)";
+      rr(x + 50, cy + 18, 18, fy - cy - 36, 10);
+      ctx.fill();
+      ctx.restore();
+
+      // gears (just circles)
+      const spin = ts * 0.002 + xWorld * 0.001;
+      const gx = x + 240;
+      const gy = cy + 70 + (Math.sin(xWorld * 0.02) * 10);
+
+      ctx.save();
+      ctx.globalAlpha = 0.22;
+      ctx.strokeStyle = "rgba(0,255,190,0.55)";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(gx, gy, 18, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(gx, gy, 6, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // spokes
+      ctx.translate(gx, gy);
+      ctx.rotate(spin);
+      for (let i=0;i<6;i++){
+        ctx.rotate(Math.PI/3);
+        ctx.beginPath();
+        ctx.moveTo(6,0);
+        ctx.lineTo(18,0);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+  }
+
+  function drawObstacle(o) {
+    const type = o[0];
+    const x = (type <= 2 ? (o[1] - world.x) : (o[1] - world.x));
+
+    // quick cull
+    if (type <= 2) {
+      const w = o[2];
+      if (x + w < -160 || x > canvas.width + 160) return;
+    } else {
+      if (x < -200 || x > canvas.width + 200) return;
+    }
+
+    if (type === 1) { // block (floor)
+      const fy = floorY();
+      const w = o[2], h = o[3];
+      const y = fy - h;
+
       ctx.save();
       ctx.fillStyle = "rgba(255,255,255,0.06)";
       ctx.strokeStyle = "rgba(130,140,255,0.75)";
@@ -426,7 +586,11 @@
       return;
     }
 
-    if (type === 0) { // spike
+    if (type === 0) { // spike (floor)
+      const fy = floorY();
+      const w = o[2], h = o[3];
+      const y = fy - h;
+
       ctx.save();
       ctx.fillStyle = "rgba(255,255,255,0.05)";
       ctx.strokeStyle = "rgba(255,120,170,0.85)";
@@ -441,25 +605,56 @@
       return;
     }
 
-    if (type === 2) { // pad
+    if (type === 2) { // pad (floor)
+      const fy = floorY();
+      const w = o[2], h = o[3];
       ctx.save();
       ctx.fillStyle = "rgba(255,230,90,0.18)";
       ctx.strokeStyle = "rgba(255,230,90,0.90)";
       ctx.lineWidth = 2;
-      rr(x, gy-h, w, h, 8); ctx.fill(); ctx.stroke();
+      rr(x, fy-h, w, h, 8); ctx.fill(); ctx.stroke();
       ctx.restore();
       return;
+    }
+
+    if (type === 3) { // orb (air)
+      const yTop = o[2], r = o[3];
+      const y = yTop;
+      ctx.save();
+      ctx.globalAlpha = 0.95;
+      ctx.strokeStyle = "rgba(60,200,255,0.95)";
+      ctx.fillStyle = "rgba(60,200,255,0.12)";
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+      ctx.shadowColor = "rgba(60,200,255,0.9)";
+      ctx.shadowBlur = 18;
+      ctx.beginPath(); ctx.arc(x, y, r+3, 0, Math.PI*2); ctx.stroke();
+      ctx.restore();
+      return;
+    }
+
+    if (type === 4) { // portal (flip)
+      const yTop = o[2], w = o[3], h = o[4];
+      ctx.save();
+      ctx.globalAlpha = 0.85;
+      ctx.fillStyle = "rgba(180,80,255,0.12)";
+      ctx.strokeStyle = "rgba(180,80,255,0.95)";
+      ctx.lineWidth = 2;
+      rr(x - w/2, yTop, w, h, 16); ctx.fill(); ctx.stroke();
+
+      ctx.shadowColor = "rgba(180,80,255,0.9)";
+      ctx.shadowBlur = 22;
+      rr(x - w/2 + 2, yTop + 2, w-4, h-4, 16); ctx.stroke();
+      ctx.restore();
     }
   }
 
   function drawPlayer() {
-    const gy = groundY();
     const px = player.x;
-    const py = gy - player.r - player.y;
+    const py = playerCenterY();
 
-    // trail (no allocations, fixed arrays)
-    const lite = liteToggle.checked;
-    if (!lite) {
+    // trail
+    if (!liteToggle.checked) {
       trailX[trailN % TRAIL_MAX] = px;
       trailY[trailN % TRAIL_MAX] = py;
       trailN++;
@@ -483,7 +678,7 @@
     ctx.strokeStyle = "rgba(0,255,190,0.90)";
     ctx.lineWidth = 2;
 
-    const ang = world.t * 0.0022;
+    const ang = world.t * 0.0022 * gravitySign; // spin direction flips (nice)
     ctx.translate(px, py);
     ctx.rotate(ang);
     rr(-player.r, -player.r, player.r*2, player.r*2, 7);
@@ -492,18 +687,17 @@
   }
 
   function drawHUD() {
-    // super tiny HUD (no DOM overlays in play)
-    const w = canvas.width, h = canvas.height;
+    const h = canvas.height;
     ctx.save();
     ctx.globalAlpha = 0.85;
     ctx.fillStyle = "rgba(0,0,0,0.22)";
-    rr(14,14,280,46,14); ctx.fill();
+    rr(14,14,320,46,14); ctx.fill();
     ctx.fillStyle = "rgba(255,255,255,0.88)";
     ctx.font = `${(h*0.03)|0}px system-ui`;
 
     if (!player.alive) ctx.fillText("CRASHED — restarting…", 28, 44);
     else if (paused) ctx.fillText("PAUSED (P) • ESC menu", 28, 44);
-    else ctx.fillText("Jump: click/space • ESC menu", 28, 44);
+    else ctx.fillText("Jump: click/space • Orbs: tap in air • ESC menu", 28, 44);
     ctx.restore();
   }
 
@@ -512,8 +706,11 @@
     if (state !== "play") return;
 
     world.t += dt * 1000;
+    tapThisFrame = false; // will be set by input before next frame if tapped
 
     if (paused) return;
+
+    if (orbLock > 0) orbLock -= dt;
 
     // dead => auto restart
     if (!player.alive) {
@@ -530,53 +727,61 @@
 
     // buffers
     if (buffer > 0) buffer -= dt;
-    if (player.onGround) coyote = COYOTE_MAX;
+    if (player.onSurface) coyote = COYOTE_MAX;
     else coyote = Math.max(0, coyote - dt);
 
-    // physics
+    // physics (offset-space)
     player.vy -= GRAV * dt;
     player.vy = Math.max(player.vy, MAXF);
-    player.y += player.vy * dt;
+    player.offset += player.vy * dt;
 
-    if (player.y <= 0) {
-      player.y = 0;
+    // clamp to surface
+    if (player.offset <= 0) {
+      player.offset = 0;
       player.vy = 0;
-      player.onGround = true;
+      player.onSurface = true;
     } else {
-      player.onGround = false;
+      player.onSurface = false;
     }
 
-    // jump
-    if (buffer > 0 && (player.onGround || coyote > 0)) {
+    // buffered jump (only from surface/coyote)
+    if (buffer > 0 && (player.onSurface || coyote > 0)) {
       buffer = 0;
       coyote = 0;
       player.vy = JUMP;
-      player.onGround = false;
+      player.onSurface = false;
       sfx.jump();
     }
 
     // collisions
-    const gy = groundY();
+    const fy = floorY();
     const px = player.x;
-    const py = gy - player.r - player.y;
-
-    // iterate obstacles
+    const py = playerCenterY();
     const obs = selected.obs;
+
     for (let i=0;i<obs.length;i++){
       const o = obs[i];
       const type = o[0];
-      const ox = o[1] - world.x;
-      const ow = o[2];
-      const oh = o[3];
 
-      if (ox + ow < -160) continue;
-      if (ox > canvas.width + 160) break; // obs are sorted by x
+      // sorted by x for floor items; air items also sorted enough
+      const ox = o[1] - world.x;
+
+      // cull
+      if (type <= 2) {
+        const ow = o[2];
+        if (ox + ow < -160) continue;
+        if (ox > canvas.width + 160) break;
+      } else {
+        if (ox < -220) continue;
+        if (ox > canvas.width + 220) break;
+      }
 
       if (type === 2) { // pad
-        const oy = gy - oh;
-        if (rectCircle(ox, oy, ow, oh, px, py, player.r*0.95) && player.y <= 7) {
+        const ow = o[2], oh = o[3];
+        const oy = fy - oh;
+        if (rectCircle(ox, oy, ow, oh, px, py, player.r*0.95) && player.offset <= 7) {
           player.vy = PADJ;
-          player.onGround = false;
+          player.onSurface = false;
           buffer = 0; coyote = 0;
           sfx.pad();
         }
@@ -584,11 +789,48 @@
       }
 
       if (type === 1) { // block
-        const oy = gy - oh;
+        const ow = o[2], oh = o[3];
+        const oy = fy - oh;
         if (rectCircle(ox, oy, ow, oh, px, py, player.r*0.90)) { die(); break; }
-      } else { // spike
-        const sy = gy - oh;
+        continue;
+      }
+
+      if (type === 0) { // spike
+        const ow = o[2], oh = o[3];
+        const sy = fy - oh;
         if (spikeHit(ox, sy, ow, oh, px, py, player.r*0.90)) { die(); break; }
+        continue;
+      }
+
+      if (type === 3) { // orb
+        const oy = o[2], r = o[3];
+        // if close enough AND you tap while in air => boost
+        if (!player.onSurface && orbLock <= 0) {
+          const rr2 = (player.r + r + 6) ** 2;
+          if (dist2(px, py, ox, oy) <= rr2 && (buffer > 0)) {
+            // orb uses the tap (buffer) while airborne
+            buffer = 0;
+            orbLock = 0.12;
+            player.vy = ORBJ;
+            player.onSurface = false;
+            sfx.orb();
+          }
+        }
+        continue;
+      }
+
+      if (type === 4) { // portal flip
+        const yTop = o[2], pw = o[3], ph = o[4];
+        const rx = ox - pw/2;
+        const ry = yTop;
+        if (rectCircle(rx, ry, pw, ph, px, py, player.r*0.92)) {
+          // prevent multi-trigger by using orbLock as a general cooldown
+          if (orbLock <= 0) {
+            orbLock = 0.20;
+            flipGravityKeepPosition();
+          }
+        }
+        continue;
       }
     }
 
@@ -599,28 +841,25 @@
   function render(ts) {
     resizeCanvas();
     ctx.clearRect(0,0,canvas.width,canvas.height);
+
     drawBackground(ts);
-    drawGround();
+    drawLanes();
+    drawDecor(ts);
 
     if (state === "play") {
       const obs = selected.obs;
       for (let i=0;i<obs.length;i++){
-        const o = obs[i];
-        const ox = o[1] - world.x;
-        if (ox + o[2] < -160) continue;
-        if (ox > canvas.width + 160) break;
-        drawObstacle(o[0], ox, o[2], o[3]);
+        drawObstacle(obs[i]);
       }
       drawPlayer();
       drawHUD();
     }
   }
 
-  // ---------- Loop (stable, low-lag) ----------
+  // ---------- Loop ----------
   let last = 0;
   function loop(ts) {
     if (!last) last = ts;
-    // fixed-ish delta clamp
     const dt = clamp((ts - last) / 1000, 0, 0.033);
     last = ts;
 
@@ -644,11 +883,12 @@
     if (musicToggle.checked) startMusic();
   });
 
-  // ensure audio on first click anywhere (helps browsers)
+  // audio permission helper
   window.addEventListener("pointerdown", () => ensureAudio(), { once:true });
 
   boot();
 })();
+
 
 
 
