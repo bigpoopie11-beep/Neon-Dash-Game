@@ -1,23 +1,25 @@
 :root{
-  --bg0:#050813;
-  --bg1:#070b1b;
-  --panel: rgba(12,14,22,0.78);
-  --border: rgba(255,255,255,0.08);
+  --bg0:#040714;
+  --bg1:#071028;
+  --panel: rgba(10,12,22,0.78);
+  --border: rgba(255,255,255,0.10);
   --txt: rgba(255,255,255,0.92);
-  --muted: rgba(255,255,255,0.62);
-  --accent: rgba(0,255,190,1);
-  --accent2: rgba(90,140,255,1);
+  --muted: rgba(255,255,255,0.64);
+  --a: rgba(0,255,190,1);
+  --b: rgba(120,120,255,1);
+  --danger: rgba(255,120,170,1);
 }
 
-*{box-sizing:border-box}
-html,body{height:100%}
+*{ box-sizing:border-box; }
+html,body{ height:100%; }
 body{
   margin:0;
   font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial;
   color:var(--txt);
-  background: radial-gradient(1200px 700px at 40% 0%, rgba(90,140,255,0.18), transparent 60%),
-              radial-gradient(900px 600px at 80% 10%, rgba(0,255,190,0.12), transparent 55%),
-              linear-gradient(180deg, var(--bg0), var(--bg1));
+  background:
+    radial-gradient(1100px 700px at 25% 0%, rgba(120,120,255,0.18), transparent 60%),
+    radial-gradient(900px 650px at 85% 10%, rgba(0,255,190,0.12), transparent 55%),
+    linear-gradient(180deg, var(--bg0), var(--bg1));
   overflow:hidden;
 }
 
@@ -30,7 +32,7 @@ body{
 .panel{
   padding:18px;
   border-right:1px solid var(--border);
-  background: linear-gradient(180deg, rgba(0,0,0,0.25), rgba(0,0,0,0.08));
+  background: linear-gradient(180deg, rgba(0,0,0,0.30), rgba(0,0,0,0.10));
 }
 
 .brand{
@@ -41,12 +43,19 @@ body{
 }
 .dot{
   width:10px;height:10px;border-radius:99px;
-  background: var(--accent);
-  box-shadow: 0 0 18px rgba(0,255,190,0.8);
+  background: var(--a);
+  box-shadow: 0 0 18px rgba(0,255,190,0.9);
 }
-.title{
-  letter-spacing: 0.25em;
-  font-weight:800;
+.title .name{
+  letter-spacing: 0.20em;
+  font-weight:900;
+  font-size:14px;
+}
+.title .tag{
+  margin-top:3px;
+  font-size:12px;
+  color:var(--muted);
+  letter-spacing: 0.05em;
 }
 
 .card{
@@ -54,7 +63,7 @@ body{
   border: 1px solid var(--border);
   border-radius: 18px;
   padding:14px;
-  box-shadow: 0 14px 40px rgba(0,0,0,0.38);
+  box-shadow: 0 14px 40px rgba(0,0,0,0.42);
 }
 
 .row{
@@ -64,7 +73,7 @@ body{
   gap:10px;
   margin-bottom:10px;
 }
-.label{color:var(--muted);font-size:13px}
+.label{ color:var(--muted); font-size:13px; }
 .pill{
   padding:6px 10px;
   border-radius:999px;
@@ -88,26 +97,21 @@ body{
   transition: transform .06s ease, background .12s ease, border-color .12s ease;
   user-select:none;
 }
-.btn:hover{ background: rgba(255,255,255,0.06); border-color: rgba(255,255,255,0.14); }
+.btn:hover{ background: rgba(255,255,255,0.06); border-color: rgba(255,255,255,0.16); }
 .btn:active{ transform: translateY(1px); }
 .btn.primary{
-  background: linear-gradient(135deg, rgba(0,255,190,0.16), rgba(90,140,255,0.10));
-  border-color: rgba(0,255,190,0.22);
-}
-.btn.small{
-  width:auto;
-  padding:10px 12px;
-  margin:0;
+  background: linear-gradient(135deg, rgba(0,255,190,0.18), rgba(120,120,255,0.12));
+  border-color: rgba(0,255,190,0.26);
 }
 
 .kbd{
   font-size:12px;
   color:rgba(255,255,255,0.75);
-  border:1px solid var(--border);
-  border-bottom-color: rgba(255,255,255,0.18);
+  border:1px solid rgba(255,255,255,0.12);
+  border-bottom-color: rgba(255,255,255,0.20);
   padding:2px 8px;
   border-radius:10px;
-  background: rgba(0,0,0,0.2);
+  background: rgba(0,0,0,0.22);
 }
 
 .sep{
@@ -118,7 +122,7 @@ body{
 
 .toggles{
   display:flex;
-  gap:12px;
+  gap:10px;
   flex-wrap:wrap;
 }
 .toggle{
@@ -132,7 +136,7 @@ body{
   color:rgba(255,255,255,0.86);
   font-size:13px;
 }
-.toggle input{accent-color: rgb(0,255,190);}
+.toggle input{ accent-color: rgb(0,255,190); }
 
 .hint{
   margin-top:12px;
@@ -159,10 +163,10 @@ body{
   background: rgba(0,0,0,0.18);
   box-shadow: 0 14px 40px rgba(0,0,0,0.22);
 }
-.heading{font-weight:800;font-size:20px}
-.sub{color:var(--muted);font-size:13px;margin-top:4px}
-.stat{color:rgba(255,255,255,0.86); font-size:13px; margin-left:10px}
-.right{display:flex; gap:14px; align-items:center}
+.heading{ font-weight:900; font-size:20px; letter-spacing:0.03em; }
+.sub{ color:var(--muted); font-size:13px; margin-top:4px; }
+.stat{ color:rgba(255,255,255,0.86); font-size:13px; margin-left:10px; }
+.right{ display:flex; gap:14px; align-items:center; }
 
 .content{
   position:relative;
@@ -189,10 +193,10 @@ body{
   cursor:pointer;
   transition: background .12s ease, border-color .12s ease, transform .06s ease;
 }
-.levelItem:hover{background: rgba(255,255,255,0.05); border-color: rgba(255,255,255,0.14);}
-.levelItem:active{transform: translateY(1px);}
-.levelItem .name{font-weight:800}
-.levelItem .meta{color:var(--muted); font-size:12px; margin-top:4px}
+.levelItem:hover{ background: rgba(255,255,255,0.05); border-color: rgba(255,255,255,0.15); }
+.levelItem:active{ transform: translateY(1px); }
+.levelItem .name{ font-weight:900; }
+.levelItem .meta{ color:var(--muted); font-size:12px; margin-top:4px; }
 .levelItem.selected{
   border-color: rgba(0,255,190,0.28);
   box-shadow: 0 0 0 2px rgba(0,255,190,0.10) inset;
@@ -203,42 +207,8 @@ body{
   height:100%;
   border-radius:18px;
   border:1px solid var(--border);
-  background: rgba(0,0,0,0.15);
+  background: rgba(0,0,0,0.10);
   display:block;
-}
-
-.overlay{
-  position:absolute;
-  inset:0;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  pointer-events:none;
-}
-.overlay.show{pointer-events:auto;}
-.overlayCard{
-  width:min(520px, 90%);
-  border-radius:22px;
-  border:1px solid var(--border);
-  background: rgba(0,0,0,0.55);
-  box-shadow: 0 22px 80px rgba(0,0,0,0.55);
-  padding:18px;
-  backdrop-filter: blur(10px);
-}
-.overlayTitle{
-  font-size:22px;
-  font-weight:900;
-  letter-spacing: 0.08em;
-}
-.overlayText{
-  color: var(--muted);
-  margin-top:10px;
-  line-height:1.4;
-}
-.overlayBtns{
-  display:flex;
-  gap:10px;
-  margin-top:14px;
 }
 
 .footer{
@@ -247,12 +217,13 @@ body{
   padding:0 6px;
 }
 
-/* PLAY MODE: hide everything except the canvas */
-body.playmode .panel{ display:none; }
-body.playmode .levels{ display:none; }
-body.playmode .topbar{ display:none; }
-body.playmode .footer{ display:none; }
-
+/* FULLSCREEN PLAY: hide everything except canvas */
+body.playmode .panel,
+body.playmode .levels,
+body.playmode .topbar,
+body.playmode .footer{
+  display:none;
+}
 body.playmode .app{ grid-template-columns: 1fr; }
 body.playmode .stage{ padding:0; }
 body.playmode .content{ grid-template-columns: 1fr; gap:0; padding:0; }
@@ -261,7 +232,7 @@ body.playmode #game{
   border:none;
   width:100vw;
   height:100vh;
-}/* Hide the big overlay card during play (we'll use small in-game HUD instead) */
-body.playmode #overlay{ display:none; }
+}
+
 
 
