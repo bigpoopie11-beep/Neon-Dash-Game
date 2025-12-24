@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
-  <title>Neon Dash</title>
+  <title>Neon Rift Runner</title>
   <link rel="stylesheet" href="./style.css" />
 </head>
 <body>
@@ -11,7 +11,10 @@
     <aside class="panel">
       <div class="brand">
         <span class="dot"></span>
-        <div class="title">NEON DASH</div>
+        <div class="title">
+          <div class="name">NEON RIFT RUNNER</div>
+          <div class="tag">tap-to-jump • survive the rift</div>
+        </div>
       </div>
 
       <div class="card">
@@ -20,12 +23,12 @@
           <div class="pill" id="statusPill">Menu</div>
         </div>
 
-        <button class="btn primary" id="btnLevels">
-          <span>Levels</span><span class="kbd">L</span>
+        <button class="btn primary" id="btnPlay">
+          <span>Play</span><span class="kbd">Click</span>
         </button>
 
-        <button class="btn" id="btnPlay">
-          <span>Play</span><span class="kbd">Space</span>
+        <button class="btn" id="btnLevels">
+          <span>Levels</span><span class="kbd">L</span>
         </button>
 
         <button class="btn" id="btnRestart">
@@ -43,11 +46,16 @@
             <input type="checkbox" id="particlesToggle" checked />
             <span>Particles</span>
           </label>
+          <label class="toggle">
+            <input type="checkbox" id="shakeToggle" checked />
+            <span>Shake</span>
+          </label>
         </div>
 
         <div class="hint">
-          Jump: <b>Space</b>/<b>Up</b> or click/tap<br/>
-          Pause: <b>P</b> • Menu: <b>Esc</b>
+          Jump: <b>Space</b> / <b>Click</b><br/>
+          Pause: <b>P</b> • Menu: <b>Esc</b><br/>
+          (Only the sidebar <b>Play</b> starts the game)
         </div>
       </div>
     </aside>
@@ -56,7 +64,7 @@
       <div class="topbar" id="topbar">
         <div class="left">
           <div class="heading" id="screenTitle">Pick a Level</div>
-          <div class="sub" id="screenSub">Choose one and hit Play</div>
+          <div class="sub" id="screenSub">Select one, then press Play</div>
         </div>
         <div class="right">
           <div class="stat">Best: <span id="bestPct">0%</span></div>
@@ -66,23 +74,11 @@
 
       <div class="content">
         <div class="levels" id="levelsList"></div>
-
         <canvas id="game" width="960" height="540"></canvas>
-
-        <div class="overlay" id="overlay">
-          <div class="overlayCard">
-            <div class="overlayTitle" id="overlayTitle">Neon Dash</div>
-            <div class="overlayText" id="overlayText">Press Play</div>
-            <div class="overlayBtns">
-              <button class="btn small primary" id="overlayPlay">Play</button>
-              <button class="btn small" id="overlayMenu">Menu</button>
-            </div>
-          </div>
-        </div>
       </div>
 
       <footer class="footer" id="footer">
-        Fullscreen play mode hides everything except the level.
+        Pro tip: click Play → it goes fullscreen. Space won’t start, only jump.
       </footer>
     </main>
   </div>
@@ -90,4 +86,5 @@
   <script src="./main.js"></script>
 </body>
 </html>
+
 
