@@ -591,25 +591,63 @@
         continue;
       }
 
-      if(type===1 || type===2){
-        const ow=o[2], oh=o[3];
-        const falling=(type===2);
-        const sunk=falling?sink[i]:0;
+    if (type === 1 || type === 2) {
+  const ow = o[2], oh = o[3];
+  const falling = (type === 2);
+  const sunk = falling ? sink[i] : 0;
 
-        const topY=(gy-oh)+sunk;
-        const bx=ox, by=topY;
+  // block rect in screen space
+  const bx = ox;
+  const by = (gy - oh) + sunk; // TOP of block
+  const bw = ow;
+  const bh = oh;
 
-        const prevY=(gy-player.s-(player.y - player.vy*dt));
-        const bottomPrev=prevY+player.s;
-        const bottomNow=py+player.s;
-        const withinX=(px+player.s)>bx && px<(bx+ow);
+  // player rect
+  const prx = px;
+  const pry = py;
+  const prw = player.s;
+  const prh = player.s;
 
-        if(withinX && player.vy<=0 && bottomPrev<=by && bottomNow>=by){
-          player.y = (gy-player.s)-by;
-          player.vy=0; player.onGround=true;
-          if(falling) sink[i]+=160*dt;
-          continue;
-        }
+  // quick overlap test
+  const hit = aabb(prx, pry, prw, prh, bx, by, bw, bh);
+  if (!hit) continue;
+
+  // --- LANDING CHECK (from above) ---
+  const prevPy = (gy - player.s - (player.y - player.vy * dt)); // previous frame player top
+  const prevBottom = prevPy + prh;
+  const nowBottom = pry + prh;
+
+  const blockTop = by;
+  const withinX = (prx + prw) > bx && prx < (bx + bw);
+
+  // If we crossed the block top this frame, we LAND (and do NOT die)
+  if (withinX && prevBottom <= blockTop + 1 && nowBottom >= blockTop - 1 && player.vy <= 0) {
+    // snap onto top
+    player.y = (gy - player.s) - blockTop;
+    player.vy = 0;
+    player.onGround = true;
+
+    if (falling) sink[i] += 160 * dt;
+    continue;
+  }
+
+  // --- AUTO STEP (optional help) ---
+  // if you bump a SMALL block while on ground, step onto it instead of dying
+  if (player.onGround && type === 1 && oh <= 80) {
+    const stepMax = player.s * 0.55;
+    const gapToTop = blockTop - (pry + prh);
+    if (gapToTop <= stepMax && gapToTop >= -2 && withinX) {
+      player.y = (gy - player.s) - blockTop;
+      player.vy = 0;
+      player.onGround = true;
+      continue;
+    }
+  }
+
+  // otherwise: side/bottom hit = death (Geometry Dash rule)
+  die();
+  break;
+}
 
         if(falling && player.onGround && withinX && Math.abs((py+player.s)-by)<3){
           sink[i]+=160*dt;
