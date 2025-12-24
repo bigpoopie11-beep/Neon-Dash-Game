@@ -16,8 +16,8 @@
 
       <div class="card">
         <div class="row">
-          <div class="label">Menu</div>
-          <div class="pill" id="statusPill">Ready</div>
+          <div class="label">Status</div>
+          <div class="pill" id="statusPill">Menu</div>
         </div>
 
         <button class="btn primary" id="btnLevels">
@@ -46,13 +46,14 @@
         </div>
 
         <div class="hint">
-          Jump: <b>Space</b>/<b>Up</b> or click/tap • Pause: <b>P</b> • Esc: Menu
+          Jump: <b>Space</b>/<b>Up</b> or click/tap<br/>
+          Pause: <b>P</b> • Menu: <b>Esc</b>
         </div>
       </div>
     </aside>
 
     <main class="stage">
-      <div class="topbar">
+      <div class="topbar" id="topbar">
         <div class="left">
           <div class="heading" id="screenTitle">Pick a Level</div>
           <div class="sub" id="screenSub">Choose one and hit Play</div>
@@ -65,7 +66,8 @@
 
       <div class="content">
         <div class="levels" id="levelsList"></div>
-        <canvas id="game" width="960" height="540" aria-label="Neon Dash Canvas"></canvas>
+
+        <canvas id="game" width="960" height="540"></canvas>
 
         <div class="overlay" id="overlay">
           <div class="overlayCard">
@@ -79,8 +81,8 @@
         </div>
       </div>
 
-      <footer class="footer">
-        Tip: If GitHub Pages is on, your paths must be <b>relative</b> (this project is).
+      <footer class="footer" id="footer">
+        Fullscreen play mode hides everything except the level.
       </footer>
     </main>
   </div>
@@ -88,3 +90,4 @@
   <script src="./main.js"></script>
 </body>
 </html>
+
