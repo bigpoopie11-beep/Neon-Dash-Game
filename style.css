@@ -261,5 +261,7 @@ body.playmode #game{
   border:none;
   width:100vw;
   height:100vh;
-}
+}/* Hide the big overlay card during play (we'll use small in-game HUD instead) */
+body.playmode #overlay{ display:none; }
+
 
