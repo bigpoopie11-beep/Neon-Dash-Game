@@ -4,16 +4,8 @@
 
   const levelsListEl = document.getElementById("levelsList");
   const statusPillEl = document.getElementById("statusPill");
-  const screenTitleEl = document.getElementById("screenTitle");
-  const screenSubEl = document.getElementById("screenSub");
   const bestPctEl = document.getElementById("bestPct");
   const runPctEl = document.getElementById("runPct");
-
-  const overlayEl = document.getElementById("overlay");
-  const overlayTitleEl = document.getElementById("overlayTitle");
-  const overlayTextEl = document.getElementById("overlayText");
-  const overlayPlayBtn = document.getElementById("overlayPlay");
-  const overlayMenuBtn = document.getElementById("overlayMenu");
 
   const btnLevels = document.getElementById("btnLevels");
   const btnPlay = document.getElementById("btnPlay");
@@ -45,15 +37,7 @@
   function enterPlayModeUI() { document.body.classList.add("playmode"); }
   function exitPlayModeUI() { document.body.classList.remove("playmode"); }
 
-  // ---------- Overlay ----------
-  function showOverlay(title, text) {
-    overlayTitleEl.textContent = title;
-    overlayTextEl.textContent = text;
-    overlayEl.classList.add("show");
-  }
-  function hideOverlay() { overlayEl.classList.remove("show"); }
-
-  // ---------- Music (simple synth, no files) ----------
+  // ---------- Music (simple synth) ----------
   let audioCtx = null;
   let musicNode = null;
 
@@ -149,29 +133,15 @@
     musicNode = { osc1, osc2, g1, g2, noise, ng, timer };
   }
 
-  function blip(freq, dur) {
-    if (!audioCtx) return;
-    const o = audioCtx.createOscillator();
-    const g = audioCtx.createGain();
-    o.type = "square";
-    o.frequency.value = freq;
-    g.gain.value = 0.0001;
-    o.connect(g); g.connect(audioCtx.destination);
-    const t = audioCtx.currentTime;
-    g.gain.exponentialRampToValueAtTime(0.05, t + 0.005);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    o.start(t);
-    o.stop(t + dur + 0.01);
-  }
-
   // ---------- Levels ----------
+  // Fix: first obstacle starts farther away so you don't die instantly.
   const LEVELS = [
-    { id:"neon-start", name:"Neon Start", difficulty:"Easy", speed:520, length:4200,
-      obstacles:[{x:900,w:60,h:90},{x:1220,w:70,h:120},{x:1560,w:60,h:160},{x:1860,w:90,h:110},{x:2250,w:65,h:180},{x:2580,w:80,h:120},{x:2960,w:70,h:160},{x:3300,w:110,h:110},{x:3680,w:70,h:180}] },
-    { id:"pulse-run", name:"Pulse Run", difficulty:"Medium", speed:610, length:5200,
-      obstacles:[{x:820,w:70,h:130},{x:1100,w:70,h:170},{x:1440,w:70,h:200},{x:1700,w:120,h:110},{x:2060,w:70,h:210},{x:2340,w:90,h:150},{x:2700,w:70,h:240},{x:3000,w:140,h:120},{x:3380,w:80,h:210},{x:3720,w:80,h:240},{x:4100,w:160,h:120},{x:4620,w:100,h:240}] },
-    { id:"ion-storm", name:"Ion Storm", difficulty:"Hard", speed:690, length:6000,
-      obstacles:[{x:760,w:80,h:220},{x:1040,w:80,h:260},{x:1380,w:130,h:140},{x:1680,w:90,h:260},{x:1960,w:120,h:170},{x:2240,w:90,h:280},{x:2580,w:170,h:140},{x:2920,w:90,h:300},{x:3220,w:140,h:170},{x:3560,w:90,h:300},{x:3880,w:190,h:140},{x:4300,w:90,h:300},{x:4700,w:140,h:200},{x:5060,w:90,h:320},{x:5460,w:200,h:150}] }
+    { id:"neon-start", name:"Neon Start", difficulty:"Easy", speed:480, length:4200,
+      obstacles:[{x:1600,w:60,h:90},{x:1950,w:70,h:120},{x:2300,w:60,h:160},{x:2650,w:90,h:110},{x:3050,w:65,h:180},{x:3400,w:80,h:120},{x:3750,w:70,h:160}] },
+    { id:"pulse-run", name:"Pulse Run", difficulty:"Medium", speed:560, length:5200,
+      obstacles:[{x:1600,w:70,h:130},{x:1950,w:70,h:170},{x:2350,w:70,h:200},{x:2700,w:120,h:110},{x:3100,w:70,h:210},{x:3450,w:90,h:150},{x:3850,w:70,h:240},{x:4300,w:140,h:120}] },
+    { id:"ion-storm", name:"Ion Storm", difficulty:"Hard", speed:620, length:6000,
+      obstacles:[{x:1700,w:80,h:220},{x:2100,w:80,h:260},{x:2500,w:130,h:140},{x:2900,w:90,h:260},{x:3300,w:120,h:170},{x:3700,w:90,h:280},{x:4150,w:170,h:140},{x:4600,w:90,h:300},{x:5100,w:200,h:150}] }
   ];
 
   let selectedLevel = LEVELS[0];
@@ -181,9 +151,7 @@
     catch { return {}; }
   }
   const bestById = loadBest();
-  function saveBest() {
-    try { localStorage.setItem("neonDashBest", JSON.stringify(bestById)); } catch {}
-  }
+  function saveBest() { try { localStorage.setItem("neonDashBest", JSON.stringify(bestById)); } catch {} }
 
   function renderLevelsList() {
     levelsListEl.innerHTML = "";
@@ -197,7 +165,6 @@
         selectedLevel = lvl;
         renderLevelsList();
         updateBestUI();
-        showOverlay(`Selected: ${lvl.name}`, "Press Play (or Space) to start.");
       });
       levelsListEl.appendChild(el);
     });
@@ -213,11 +180,16 @@
   const player = { x: 220, y: 0, r: 20, vy: 0, onGround: true, alive: true };
   let runProgress = 0;
 
-  // stars
+  // Fix: countdown + grace time so you can react
+  let countdown = 0;     // seconds
+  let grace = 0;         // seconds (no collision)
+  const GRAVITY = 1200;  // tuned
+  const JUMP_V = 900;    // tuned
+
+  // stars + sparks
   const stars = Array.from({ length: 180 }, () => ({
     x: Math.random(), y: Math.random(), s: Math.random()*1.2+0.3, p: Math.random()
   }));
-  // sparks
   const sparks = [];
   function spawnSparks(x, y, n=18) {
     if (!particlesToggle.checked) return;
@@ -240,12 +212,15 @@
     world.x = 0;
     world.t = 0;
     runProgress = 0;
-    player.y = 0;      // height above ground
+    player.y = 0;
     player.vy = 0;
     player.onGround = true;
     player.alive = true;
     sparks.length = 0;
     paused = false;
+
+    countdown = 1.0; // 1 second "Ready"
+    grace = 1.2;     // 1.2 seconds no collisions
     runPctEl.textContent = "0%";
   }
 
@@ -253,19 +228,14 @@
     exitPlayModeUI();
     state = State.LEVELS;
     statusPillEl.textContent = "Menu";
-    screenTitleEl.textContent = "Pick a Level";
-    screenSubEl.textContent = "Choose one and hit Play";
     resetRun();
-    showOverlay("Neon Dash", "Pick a level, then press Play (or Space).");
   }
 
   function startLevel() {
+    ensureAudio(); // allow music after clicking play
     enterPlayModeUI();
     state = State.PLAY;
     statusPillEl.textContent = "Playing";
-    screenTitleEl.textContent = selectedLevel.name;
-    screenSubEl.textContent = "Jump over blocks — survive to the end";
-    hideOverlay();
     resetRun();
     updateBestUI();
     if (musicToggle.checked) startMusic();
@@ -279,24 +249,22 @@
     statusPillEl.textContent = "Cleared!";
     renderLevelsList();
     updateBestUI();
-    showOverlay("Level Cleared!", "Nice. Pick another level or press Play again.");
   }
 
   function loseRun() {
     const best = bestById[selectedLevel.id] || 0;
     if (runProgress > best) { bestById[selectedLevel.id] = runProgress; saveBest(); }
     statusPillEl.textContent = "Crashed";
-    showOverlay("Crashed!", "Press R to restart • Esc for menu");
+    paused = true;
   }
 
   function jump() {
     if (state !== State.PLAY || paused) return;
-    ensureAudio();
+    if (countdown > 0) return; // can't jump during "Ready"
     if (player.onGround && player.alive) {
-      player.vy = 760; // upward velocity (because we subtract gravity later)
+      player.vy = JUMP_V;
       player.onGround = false;
       spawnSparks(player.x, 10, 24);
-      blip(540, 0.03);
     }
   }
 
@@ -361,7 +329,7 @@
     for (const o of selectedLevel.obstacles) {
       const x = o.x - world.x;
       const y = gy - o.h;
-      if (x + o.w < -80 || x > canvas.width + 80) continue;
+      if (x + o.w < -120 || x > canvas.width + 120) continue;
 
       ctx.save();
       ctx.fillStyle = "rgba(255,255,255,0.06)";
@@ -411,7 +379,6 @@
       p.life -= dt;
       if (p.life <= 0) { sparks.splice(i,1); continue; }
 
-      // spark physics in "height space"
       p.vy -= 980 * dt;
       p.x += p.vx * dt;
       p.y += p.vy * dt;
@@ -428,53 +395,86 @@
     }
   }
 
+  function drawHUD(w, h) {
+    ctx.save();
+    ctx.globalAlpha = 0.92;
+    ctx.fillStyle = "rgba(0,0,0,0.30)";
+    roundRect(ctx, 16, 16, 280, 68, 14);
+    ctx.fill();
+
+    ctx.fillStyle = "rgba(255,255,255,0.90)";
+    ctx.font = `${Math.floor(h*0.032)}px system-ui`;
+
+    if (countdown > 0) {
+      ctx.fillText("READY", 32, 46);
+      ctx.globalAlpha = 0.75;
+      ctx.fillText("Click or Space to Jump", 32, 76);
+    } else if (paused) {
+      ctx.fillText("PAUSED", 32, 46);
+      ctx.globalAlpha = 0.75;
+      ctx.fillText("P resume • Esc menu", 32, 76);
+    } else {
+      ctx.fillText("RUN", 32, 46);
+      ctx.globalAlpha = 0.75;
+      ctx.fillText("P pause • Esc menu", 32, 76);
+    }
+    ctx.restore();
+  }
+
   // ---------- Update / Render ----------
   function update(dt) {
     if (state !== State.PLAY) return;
-    if (paused) return;
 
     world.t += dt * 1000;
-    world.x += selectedLevel.speed * dt;
+
+    // countdown before moving
+    if (countdown > 0) {
+      countdown -= dt;
+      if (countdown < 0) countdown = 0;
+    } else if (!paused) {
+      world.x += selectedLevel.speed * dt;
+    }
+
+    if (grace > 0) grace -= dt;
 
     runProgress = clamp(world.x / selectedLevel.length, 0, 1);
     runPctEl.textContent = `${Math.floor(runProgress*100)}%`;
 
-    // ✅ Correct gravity (player.y is height above ground)
-    player.vy -= 1400 * dt;   // gravity DOWN
-    player.y += player.vy * dt;
+    if (!paused) {
+      // Correct gravity (y is height above ground)
+      player.vy -= GRAVITY * dt;
+      player.y += player.vy * dt;
 
-    if (player.y <= 0) {
-      player.y = 0;
-      player.vy = 0;
-      player.onGround = true;
-    } else {
-      player.onGround = false;
-    }
-
-    // collision
-    const gy = getGroundY();
-    const px = player.x;
-    const py = gy - player.r - player.y;
-
-    for (const o of selectedLevel.obstacles) {
-      const ox = o.x - world.x;
-      const oy = gy - o.h;
-      if (ox + o.w < -80 || ox > canvas.width + 80) continue;
-
-      if (rectCircleCollide(ox, oy, o.w, o.h, px, py, player.r * 0.95)) {
-        player.alive = false;
-        spawnSparks(px, player.y + 20, 50);
-        blip(140, 0.08);
-        paused = true;
-        loseRun();
-        break;
+      if (player.y <= 0) {
+        player.y = 0;
+        player.vy = 0;
+        player.onGround = true;
+      } else {
+        player.onGround = false;
       }
     }
 
-    if (runProgress >= 1 && player.alive) {
-      blip(820, 0.05);
-      winRun();
+    // collision only after grace time and after countdown
+    if (!paused && grace <= 0 && countdown <= 0) {
+      const gy = getGroundY();
+      const px = player.x;
+      const py = gy - player.r - player.y;
+
+      for (const o of selectedLevel.obstacles) {
+        const ox = o.x - world.x;
+        const oy = gy - o.h;
+        if (ox + o.w < -120 || ox > canvas.width + 120) continue;
+
+        if (rectCircleCollide(ox, oy, o.w, o.h, px, py, player.r * 0.92)) {
+          player.alive = false;
+          spawnSparks(px, player.y + 20, 50);
+          loseRun();
+          break;
+        }
+      }
     }
+
+    if (!paused && runProgress >= 1 && player.alive) winRun();
   }
 
   function render(dt, ts) {
@@ -486,19 +486,7 @@
     drawObstacles();
     drawPlayer();
     drawSparks(dt);
-
-    // tiny in-canvas HUD (still visible in playmode)
-    ctx.save();
-    ctx.globalAlpha = 0.9;
-    ctx.fillStyle = "rgba(0,0,0,0.25)";
-    roundRect(ctx, 16, 16, 220, 54, 14);
-    ctx.fill();
-    ctx.fillStyle = "rgba(255,255,255,0.85)";
-    ctx.font = `${Math.floor(h*0.03)}px system-ui`;
-    ctx.fillText(paused ? "PAUSED" : "RUNNING", 32, 48);
-    ctx.globalAlpha = 0.75;
-    ctx.fillText(`Speed ${selectedLevel.speed}`, 120, 48);
-    ctx.restore();
+    drawHUD(w, h);
   }
 
   // ---------- Loop ----------
@@ -517,37 +505,34 @@
   // ---------- Input ----------
   function togglePause() {
     if (state !== State.PLAY) return;
+    if (countdown > 0) return;
     paused = !paused;
-    if (paused) showOverlay("Paused", "Press P to resume • Esc for menu");
-    else hideOverlay();
   }
 
+  // IMPORTANT: Space does NOT start the level anymore.
+  // Space only jumps during PLAY.
   window.addEventListener("keydown", (e) => {
     if (e.repeat) return;
 
     if (e.code === "Escape") { goMenu(); return; }
-    if (e.code === "KeyL") { goMenu(); return; }
     if (e.code === "KeyP") { togglePause(); return; }
     if (e.code === "KeyR") { startLevel(); return; }
 
     if (e.code === "Space" || e.code === "ArrowUp") {
-      if (state === State.LEVELS) startLevel();
-      else jump();
+      if (state === State.PLAY) jump();
     }
   });
 
+  // click/tap jumps in play
   canvas.addEventListener("pointerdown", () => {
     ensureAudio();
-    if (state === State.LEVELS) startLevel();
-    else jump();
+    if (state === State.PLAY) jump();
   });
 
+  // buttons
   btnLevels.addEventListener("click", () => goMenu());
   btnPlay.addEventListener("click", () => startLevel());
   btnRestart.addEventListener("click", () => startLevel());
-
-  overlayPlayBtn.addEventListener("click", () => startLevel());
-  overlayMenuBtn.addEventListener("click", () => goMenu());
 
   musicToggle.addEventListener("change", () => {
     ensureAudio();
@@ -559,7 +544,7 @@
   function boot() {
     renderLevelsList();
     updateBestUI();
-    goMenu(); // shows overlay + menu
+    goMenu();
     window.addEventListener("resize", () => resizeCanvasToDisplaySize());
     resizeCanvasToDisplaySize();
     requestAnimationFrame(loop);
@@ -567,4 +552,5 @@
 
   boot();
 })();
+
 
