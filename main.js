@@ -20,10 +20,7 @@
 
   // ---------- Helpers ----------
   const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
-  const dist2 = (ax, ay, bx, by) => {
-    const dx = ax - bx, dy = ay - by;
-    return dx * dx + dy * dy;
-  };
+  const lerp = (a, b, t) => a + (b - a) * t;
 
   function resizeCanvas() {
     const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
@@ -34,11 +31,9 @@
       canvas.width = w;
       canvas.height = h;
     }
-    return { w, h, dpr };
   }
 
-  function floorY() { return canvas.height * 0.84; }
-  function ceilY() { return canvas.height * 0.18; } // ceiling lane
+  function groundY() { return canvas.height * 0.84; }
 
   function enterPlayUI() { document.body.classList.add("playmode"); }
   function exitPlayUI() { document.body.classList.remove("playmode"); }
@@ -68,11 +63,11 @@
   }
 
   const sfx = {
-    jump(){ beep("square", 680, 0.06, 0.06); },
-    orb(){  beep("triangle", 960, 0.08, 0.06); },
-    pad(){  beep("triangle", 880, 0.08, 0.06); },
-    flip(){ beep("sawtooth", 420, 0.09, 0.06); },
+    jump(){ beep("square", 700, 0.06, 0.06); },
+    pad(){  beep("triangle", 900, 0.08, 0.06); },
+    orb(){  beep("triangle", 1040, 0.08, 0.06); },
     die(){  beep("sawtooth", 160, 0.12, 0.08); },
+    portal(){ beep("sine", 420, 0.08, 0.05); },
     win(){  beep("triangle", 980, 0.10, 0.06); },
   };
 
@@ -89,7 +84,7 @@
     stopMusic();
 
     const master = audioCtx.createGain();
-    master.gain.value = 0.11;
+    master.gain.value = 0.105;
     master.connect(audioCtx.destination);
 
     const o1 = audioCtx.createOscillator();
@@ -104,7 +99,7 @@
     o2.connect(g2); g2.connect(master);
     o1.start(); o2.start();
 
-    const bpm = 126;
+    const bpm = 128;
     const stepDur = (60 / bpm) / 2;
     const seq = [0, 7, 12, 7, 0, 10, 12, 10];
     const base = 220;
@@ -150,86 +145,111 @@
   })();
   function saveBest(){ try { localStorage.setItem(bestKey, JSON.stringify(bestById)); } catch {} }
 
-  // ---------- Types ----------
-  // 0 spike (floor)
-  // 1 block (floor)
-  // 2 pad   (floor)
-  // 3 orb   (air)    [3, x, yFromTop, radius]
-  // 4 portal(gravity flip) (air) [4, x, yFromTop, w, h]
-  //
-  // For floor stuff arrays are: [type, x, w, h]
+  // ---------- Level System ----------
+  // Types:
+  // 0 = spike (kills)
+  // 1 = solid block (standable)
+  // 2 = falling block (sinks if you stand on it)
+  // 3 = pad (big jump on touch)
+  // 4 = orb (tap near it in air -> boost)
+  // 5 = portal (speed portal: changes speed)
 
-  // ---------- Levels (OG-ish) ----------
+  // Each obstacle is:
+  // Floor objects: [type, x, w, h]
+  // Orb:          [4, x, y, r]
+  // Portal:       [5, x, y, w, h, speedMult]  (y = top)
+
+  const THEMES = {
+    easy:  { a:[0,255,190], b:[130,140,255], spike:[255,120,170], orb:[60,200,255], portal:[255,120,255] },
+    mid:   { a:[255,210,90], b:[0,255,190],  spike:[255,120,170], orb:[60,200,255], portal:[120,200,255] },
+    hard:  { a:[255,80,120], b:[160,80,255], spike:[255,120,170], orb:[60,200,255], portal:[255,210,90] },
+  };
+
+  // These are BUILT like OG: step blocks + small hazards + “keep jumping” falling tiles.
   const LEVELS = [
     {
-      id:"l1", name:"Neon Steps", diff:"Easy",
-      speed: 620, length: 6400,
+      id:"l1",
+      name:"Stereo Spark",
+      diff:"Easy",
+      theme:"easy",
+      baseSpeed: 640,
+      length: 6600,
       obs: [
-        [0,1700,46,56],
-        [1,2100,90,110],
-        [0,2500,46,56],
+        // Step staircase (landable)
+        [1,1600,90,40],[1,1760,90,55],[1,1920,90,70],[1,2080,90,85],
+        [0,2320,46,56],
 
-        [3,2680, 310, 18],       // orb (tap in air)
-        [2,2860,70,16],           // pad
-        [1,3020,110,160],
+        // Gentle steps into a pad section
+        [1,2520,110,55],[1,2700,110,70],
+        [3,2900,70,16],
+        [1,3060,120,110],
 
-        [0,3500,46,56],
-        [1,3850,100,140],
-        [0,4400,46,56],
+        // Falling tile run (must keep hopping)
+        [2,3400,90,22],[2,3560,90,22],[2,3720,90,22],[2,3880,90,22],
 
-        [3,4650, 290, 18],        // orb
-        [1,5000,150,135],
-        [0,5600,46,56],
+        // Orb timing (optional help)
+        [4,4300, 305, 18],
+        [1,4520,140,70],
+        [0,5100,46,56],
       ]
     },
     {
-      id:"l2", name:"Pulse Lane", diff:"Medium",
-      speed: 690, length: 7200,
+      id:"l2",
+      name:"Backbeat Boulevard",
+      diff:"Medium",
+      theme:"mid",
+      baseSpeed: 700,
+      length: 7400,
       obs: [
-        [0,1700,46,56],
-        [0,1880,46,56],
-        [1,2300,120,170],
+        // step chain
+        [1,1600,90,50],[1,1760,90,70],[1,1920,90,90],
+        [0,2200,46,56],
 
-        [3,2650, 305, 18],
-        [2,2950,70,16],
-        [1,3120,160,150],
+        // orb + pad combo (classic)
+        [4,2500, 300, 18],
+        [3,2720,70,16],
+        [1,2880,140,120],
 
-        [0,3650,46,56],
-        [1,4020,120,230],
+        // keep jumping falling tiles longer
+        [2,3280,90,22],[2,3440,90,22],[2,3600,90,22],[2,3760,90,22],[2,3920,90,22],
 
-        [4,4520, 260, 70, 130],   // gravity flip portal
-        [3,4900, 140, 18],         // ceiling-side orb (after flip)
-        [0,5200,46,56],
+        // speed portal (faster)
+        [5,4300, 220, 70, 140, 1.12],
 
-        [4,5900, 260, 70, 130],   // flip back
-        [1,6250,180,160],
-        [0,6900,46,56],
+        // small spikes later
+        [0,5100,46,56],
+        [1,5400,160,95],
+        [0,6000,46,56],
       ]
     },
     {
-      id:"l3", name:"Ion Rush", diff:"Hard",
-      speed: 740, length: 7800,
+      id:"l3",
+      name:"Rage Circuit",
+      diff:"Hard",
+      theme:"hard",
+      baseSpeed: 760,
+      length: 8000,
       obs: [
-        [0,1800,46,56],
-        [1,2200,140,230],
+        // tight steps
+        [1,1500,90,55],[1,1660,90,80],[1,1820,90,105],
+        [0,2100,46,56],
 
-        [3,2550, 300, 18],
-        [0,2700,46,56],
-        [2,2920,70,16],
-        [1,3080,200,160],
+        // orb chain (tap timing in air)
+        [4,2500, 305, 18],
+        [4,2800, 275, 18],
 
-        [4,3600, 260, 70, 130],   // flip
-        [3,3920, 140, 18],
-        [1,4200,140,260],         // still floor block (danger if you drop)
+        // falling tiles + spikes
+        [2,3200,90,22],[2,3360,90,22],[2,3520,90,22],[2,3680,90,22],
+        [0,4020,46,56],
 
-        [4,4680, 260, 70, 130],   // flip back
-        [0,5050,46,56],
-        [1,5400,240,170],
+        // speed portal (even faster)
+        [5,4500, 220, 70, 140, 1.18],
 
-        [3,5900, 290, 18],
-        [0,6300,46,56],
-        [1,6600,160,320],
-        [0,7350,46,56],
+        // final jump pad into steps
+        [3,5200,70,16],
+        [1,5360,120,120],[1,5540,120,140],
+        [0,6200,46,56],
+        [1,6800,160,110],
       ]
     }
   ];
@@ -246,7 +266,7 @@
       const best = ((bestById[lvl.id] || 0) * 100) | 0;
       const el = document.createElement("div");
       el.className = "levelItem" + (lvl.id === selected.id ? " sel" : "");
-      el.innerHTML = `<div class="n">${lvl.name}</div><div class="m">${lvl.diff} • Best ${best}% • Speed ${lvl.speed}</div>`;
+      el.innerHTML = `<div class="n">${lvl.name}</div><div class="m">${lvl.diff} • Best ${best}% • Speed ${lvl.baseSpeed}</div>`;
       el.onclick = () => { selected = lvl; renderLevels(); updateBestUI(); };
       levelsListEl.appendChild(el);
     }
@@ -256,12 +276,12 @@
   let state = "menu"; // menu | play
   let paused = false;
 
-  // physics (jump a little higher per your request)
+  // physics (jump a little higher than last)
   const GRAV = 2850;
-  const JUMP = 880;    // <- higher than before
-  const PADJ = 1260;
-  const ORBJ = 1050;   // orb boost
-  const MAXF = -1750;
+  const JUMP = 920;    // slightly higher
+  const PADJ = 1280;
+  const ORBJ = 1120;
+  const MAXF = -1800;
 
   // forgiveness
   let coyote = 0;
@@ -269,72 +289,35 @@
   const COYOTE_MAX = 0.08;
   const BUFFER_MAX = 0.11;
 
-  // orb tap (must tap while near orb)
-  let tapThisFrame = false;
-  let orbLock = 0; // prevents double-trigger spam
+  // orb cooldown
+  let orbCD = 0;
 
-  // gravity
-  // gravitySign = 1 means "normal floor"
-  // gravitySign = -1 means "ceiling mode"
-  let gravitySign = 1;
+  // speed multiplier (from portals)
+  let speedMult = 1;
 
   // auto restart
   let deadTimer = 0;
   const RESTART_IN = 0.75;
 
-  // world/player
+  // player/world
   const world = { x: 0, t: 0 };
-  // offset = distance away from current surface (floor/ceiling)
-  const player = { x: 250, offset: 0, vy: 0, r: 18, alive: true, onSurface: true };
+  const player = {
+    x: 250,
+    y: 0,    // height above ground
+    vy: 0,
+    s: 36,   // cube size
+    alive: true,
+    onGround: true
+  };
 
-  // visuals (fixed arrays, low lag)
-  const starsA = new Float32Array(240);
-  const starsB = new Float32Array(180);
-  for (let i=0;i<starsA.length;i++) starsA[i] = Math.random();
-  for (let i=0;i<starsB.length;i++) starsB[i] = Math.random();
+  // falling tile sink tracking (index -> sink amount)
+  const sink = [];
 
-  // tiny trail
-  const TRAIL_MAX = 18;
-  const trailX = new Float32Array(TRAIL_MAX);
-  const trailY = new Float32Array(TRAIL_MAX);
-  let trailN = 0;
+  // lightweight background stars (fixed arrays)
+  const stars = new Float32Array(400);
+  for (let i=0;i<stars.length;i++) stars[i] = Math.random();
 
   function setStatus(t){ statusPillEl.textContent = t; }
-
-  function surfaceY() {
-    return gravitySign === 1 ? floorY() : ceilY();
-  }
-
-  function playerCenterY() {
-    const sY = surfaceY();
-    // if normal: cube above floor => y = floor - r - offset
-    // if inverted: cube below ceiling => y = ceiling + r + offset
-    return gravitySign === 1 ? (sY - player.r - player.offset) : (sY + player.r + player.offset);
-  }
-
-  function snapToSurface() {
-    player.offset = 0;
-    player.vy = 0;
-    player.onSurface = true;
-  }
-
-  function flipGravityKeepPosition() {
-    // keep the cube at the same screen Y when flipping
-    const py = playerCenterY();
-    gravitySign *= -1;
-
-    const sY = surfaceY();
-    if (gravitySign === 1) {
-      // offset = (floor - r) - py
-      player.offset = Math.max(0, (sY - player.r) - py);
-    } else {
-      // offset = py - (ceiling + r)
-      player.offset = Math.max(0, py - (sY + player.r));
-    }
-    player.vy = -player.vy;
-    player.onSurface = false;
-    sfx.flip();
-  }
 
   function goMenu() {
     exitPlayUI();
@@ -350,24 +333,28 @@
     enterPlayUI();
     state = "play";
     paused = false;
-    setStatus("Playing");
-    screenTitleEl.textContent = selected.name;
-    screenSubEl.textContent = "tap to jump • orbs/portals enabled";
-
-    if (musicToggle.checked) startMusic();
 
     world.x = 0; world.t = 0;
-    gravitySign = 1;
-    player.offset = 0; player.vy = 0;
-    player.alive = true; player.onSurface = true;
+    player.y = 0; player.vy = 0;
+    player.alive = true; player.onGround = true;
 
     coyote = COYOTE_MAX; buffer = 0;
     deadTimer = 0;
-    tapThisFrame = false;
-    orbLock = 0;
-    trailN = 0;
+    orbCD = 0;
+    speedMult = 1;
+
+    // reset sinks
+    sink.length = selected.obs.length;
+    for (let i=0;i<sink.length;i++) sink[i] = 0;
 
     runPctEl.textContent = "0%";
+    setStatus("Playing");
+
+    screenTitleEl.textContent = selected.name;
+    screenSubEl.textContent = "tap to jump • orbs/pads/portals enabled";
+
+    if (musicToggle.checked) startMusic();
+    updateBestUI();
   }
 
   function die() {
@@ -383,11 +370,13 @@
     sfx.win();
     const prog = clamp(world.x / selected.length, 0, 1);
     const prev = bestById[selected.id] || 0;
-    if (prog > prev) { bestById[selected.id] = prog; saveBest(); renderLevels(); updateBestUI(); }
+    if (prog > prev) { bestById[selected.id] = prog; saveBest(); }
+    renderLevels();
+    updateBestUI();
     setTimeout(() => { if (state === "play") goMenu(); }, 900);
   }
 
-  // Only Play starts
+  // ONLY Play starts
   btnPlay.onclick = startRun;
   btnRestart.onclick = startRun;
   btnLevels.onclick = goMenu;
@@ -397,40 +386,24 @@
     buffer = BUFFER_MAX;
   }
 
-  // tap used for orbs (and still jumps if on surface)
-  function registerTap() {
-    tapThisFrame = true;
-    queueJump();
-  }
-
   window.addEventListener("keydown", (e) => {
     if (e.repeat) return;
     if (e.code === "Escape") { goMenu(); return; }
     if (e.code === "KeyP") { if (state === "play") paused = !paused; return; }
     if (e.code === "KeyR") { startRun(); return; }
-    if (e.code === "Space" || e.code === "ArrowUp") { registerTap(); }
+    if (e.code === "Space" || e.code === "ArrowUp") { queueJump(); }
   });
+  canvas.addEventListener("pointerdown", () => { ensureAudio(); queueJump(); });
+  window.addEventListener("pointerdown", () => ensureAudio(), { once:true });
 
-  canvas.addEventListener("pointerdown", () => {
-    ensureAudio();
-    registerTap();
-  });
-
-  // ---------- Collision ----------
-  function rectCircle(rx, ry, rw, rh, cx, cy, cr) {
-    const nx = cx < rx ? rx : cx > rx + rw ? rx + rw : cx;
-    const ny = cy < ry ? ry : cy > ry + rh ? ry + rh : cy;
-    const dx = cx - nx, dy = cy - ny;
-    return dx*dx + dy*dy <= cr*cr;
-  }
-
-  function spikeHit(sx, sy, w, h, cx, cy, cr) {
-    if (rectCircle(sx, sy + h*0.55, w, h*0.45, cx, cy, cr)) return true;
-    const tx = sx + w*0.5, ty = sy + 6;
-    return dist2(cx, cy, tx, ty) <= cr*cr;
+  // ---------- Collision helpers ----------
+  function aabbOverlap(ax, ay, aw, ah, bx, by, bw, bh) {
+    return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by;
   }
 
   // ---------- Drawing ----------
+  function rgb(arr, a=1){ return `rgba(${arr[0]},${arr[1]},${arr[2]},${a})`; }
+
   function rr(x, y, w, h, r) {
     const rr = Math.min(r, w/2, h/2);
     ctx.beginPath();
@@ -442,37 +415,30 @@
     ctx.closePath();
   }
 
-  function drawBackground(t) {
+  function drawBackground(ts) {
+    const theme = THEMES[selected.theme];
     const w = canvas.width, h = canvas.height;
-    const p1 = 0.18 + Math.sin(t*0.0012)*0.05;
-    const p2 = 0.14 + Math.cos(t*0.0010)*0.05;
+
+    const p = 0.16 + Math.sin(ts*0.0012)*0.05;
+    const q = 0.14 + Math.cos(ts*0.0010)*0.05;
 
     const g = ctx.createLinearGradient(0,0,w,h);
-    g.addColorStop(0, `rgba(130,140,255,${p1})`);
-    g.addColorStop(0.55, `rgba(0,0,0,0)`);
-    g.addColorStop(1, `rgba(0,255,190,${p2})`);
+    g.addColorStop(0, rgb(theme.b, p));
+    g.addColorStop(0.55, "rgba(0,0,0,0)");
+    g.addColorStop(1, rgb(theme.a, q));
     ctx.fillStyle = g;
     ctx.fillRect(0,0,w,h);
 
-    // stars
+    // stars + subtle parallax
     const lite = liteToggle.checked;
+    const count = lite ? 70 : 150;
     ctx.save();
     ctx.globalAlpha = 0.8;
-
-    const countA = lite ? 50 : 120;
-    for (let i=0;i<countA;i++){
-      const x = (starsA[i*2] * w + world.x*0.06) % w;
-      const y = (starsA[i*2+1] * h + Math.sin(t*0.00035 + i)*4) % h;
-      ctx.fillStyle = "rgba(255,255,255,0.75)";
-      ctx.fillRect(x,y,1.6,1.6);
-    }
-
-    const countB = lite ? 35 : 90;
-    for (let i=0;i<countB;i++){
-      const x = (starsB[i*2] * w + world.x*0.12) % w;
-      const y = (starsB[i*2+1] * h + Math.cos(t*0.00045 + i)*6) % h;
-      ctx.fillStyle = "rgba(255,255,255,0.82)";
-      ctx.fillRect(x,y,2.0,2.0);
+    for (let i=0;i<count;i++){
+      const sx = (stars[i*2] * w + world.x*0.08) % w;
+      const sy = (stars[i*2+1] * h + Math.sin(ts*0.00035 + i)*4) % h;
+      ctx.fillStyle = "rgba(255,255,255,0.78)";
+      ctx.fillRect(sx, sy, 2, 2);
     }
     ctx.restore();
 
@@ -487,202 +453,210 @@
     ctx.restore();
   }
 
-  function drawLanes() {
-    const w = canvas.width, h = canvas.height;
-    const fy = floorY();
-    const cy = ceilY();
+  function drawGround() {
+    const gy = groundY();
+    ctx.fillStyle = "rgba(0,0,0,0.15)";
+    ctx.fillRect(0, gy, canvas.width, canvas.height - gy);
 
-    // floor lane
-    ctx.fillStyle = "rgba(0,255,190,0.10)";
-    ctx.fillRect(0, fy, w, h-fy);
-    ctx.strokeStyle = "rgba(0,255,190,0.60)";
+    ctx.strokeStyle = "rgba(0,255,190,0.55)";
     ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.moveTo(0,fy); ctx.lineTo(w,fy); ctx.stroke();
-
-    // ceiling lane
-    ctx.strokeStyle = "rgba(130,140,255,0.60)";
-    ctx.beginPath(); ctx.moveTo(0,cy); ctx.lineTo(w,cy); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(canvas.width, gy); ctx.stroke();
   }
 
-  // OG-style deco: neon pillars + fake gears (visual only)
   function drawDecor(ts) {
     if (liteToggle.checked) return;
+    const theme = THEMES[selected.theme];
+    const gy = groundY();
+    const base = Math.floor(world.x / 420) * 420;
 
-    const w = canvas.width;
-    const fy = floorY();
-    const cy = ceilY();
-    const base = Math.floor(world.x / 400) * 400;
+    for (let k=-2; k<6; k++){
+      const xw = base + k*420;
+      const x = xw - world.x;
 
-    for (let k = -2; k < 6; k++) {
-      const xWorld = base + k * 400;
-      const x = xWorld - world.x;
-
-      // pillars
+      // neon pillar
       ctx.save();
-      ctx.globalAlpha = 0.25;
-      ctx.fillStyle = "rgba(130,140,255,0.20)";
-      rr(x + 50, cy + 18, 18, fy - cy - 36, 10);
+      ctx.globalAlpha = 0.18;
+      ctx.fillStyle = rgb(theme.b, 0.22);
+      rr(x+60, gy-250, 16, 240, 10);
       ctx.fill();
       ctx.restore();
 
-      // gears (just circles)
-      const spin = ts * 0.002 + xWorld * 0.001;
-      const gx = x + 240;
-      const gy = cy + 70 + (Math.sin(xWorld * 0.02) * 10);
-
+      // ring
       ctx.save();
       ctx.globalAlpha = 0.22;
-      ctx.strokeStyle = "rgba(0,255,190,0.55)";
+      ctx.strokeStyle = rgb(theme.a, 0.55);
       ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.arc(gx, gy, 18, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.arc(gx, gy, 6, 0, Math.PI * 2);
-      ctx.stroke();
-
-      // spokes
-      ctx.translate(gx, gy);
-      ctx.rotate(spin);
-      for (let i=0;i<6;i++){
-        ctx.rotate(Math.PI/3);
-        ctx.beginPath();
-        ctx.moveTo(6,0);
-        ctx.lineTo(18,0);
-        ctx.stroke();
-      }
+      const r = 18 + (Math.sin(ts*0.002 + xw*0.003)*6);
+      ctx.beginPath(); ctx.arc(x+240, gy-180, r, 0, Math.PI*2); ctx.stroke();
       ctx.restore();
     }
   }
 
-  function drawObstacle(o) {
-    const type = o[0];
-    const x = (type <= 2 ? (o[1] - world.x) : (o[1] - world.x));
+  function drawSpike(x, w, h) {
+    const theme = THEMES[selected.theme];
+    const gy = groundY();
+    const y = gy - h;
+    ctx.save();
+    ctx.fillStyle = "rgba(255,255,255,0.05)";
+    ctx.strokeStyle = rgb(theme.spike, 0.9);
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(x, y+h);
+    ctx.lineTo(x+w*0.5, y);
+    ctx.lineTo(x+w, y+h);
+    ctx.closePath();
+    ctx.fill(); ctx.stroke();
+    ctx.restore();
+  }
 
-    // quick cull
-    if (type <= 2) {
-      const w = o[2];
-      if (x + w < -160 || x > canvas.width + 160) return;
-    } else {
-      if (x < -200 || x > canvas.width + 200) return;
-    }
+  function drawBlock(x, w, h, isFalling, sunk) {
+    const theme = THEMES[selected.theme];
+    const gy = groundY();
+    const y = (gy - h) + (sunk || 0);
 
-    if (type === 1) { // block (floor)
-      const fy = floorY();
-      const w = o[2], h = o[3];
-      const y = fy - h;
+    ctx.save();
+    ctx.fillStyle = "rgba(255,255,255,0.06)";
+    ctx.strokeStyle = rgb(theme.b, 0.80);
+    ctx.lineWidth = 2;
 
-      ctx.save();
-      ctx.fillStyle = "rgba(255,255,255,0.06)";
-      ctx.strokeStyle = "rgba(130,140,255,0.75)";
-      ctx.lineWidth = 2;
-      rr(x,y,w,h,10); ctx.fill(); ctx.stroke();
+    rr(x, y, w, h, 10);
+    ctx.fill(); ctx.stroke();
 
-      ctx.shadowColor = "rgba(0,255,190,0.85)";
-      ctx.shadowBlur = 16;
-      ctx.strokeStyle = "rgba(0,255,190,0.42)";
-      rr(x+1,y+1,w-2,h-2,10); ctx.stroke();
-      ctx.restore();
-      return;
-    }
+    // top highlight (OG-ish)
+    ctx.globalAlpha = 0.55;
+    ctx.strokeStyle = isFalling ? "rgba(255,210,90,0.65)" : rgb(theme.a, 0.55);
+    ctx.beginPath();
+    ctx.moveTo(x+6, y+6);
+    ctx.lineTo(x+w-6, y+6);
+    ctx.stroke();
 
-    if (type === 0) { // spike (floor)
-      const fy = floorY();
-      const w = o[2], h = o[3];
-      const y = fy - h;
+    // glow
+    ctx.globalAlpha = 1;
+    ctx.shadowColor = rgb(theme.a, 0.9);
+    ctx.shadowBlur = 14;
+    ctx.strokeStyle = rgb(theme.a, 0.35);
+    rr(x+1, y+1, w-2, h-2, 10);
+    ctx.stroke();
 
-      ctx.save();
-      ctx.fillStyle = "rgba(255,255,255,0.05)";
-      ctx.strokeStyle = "rgba(255,120,170,0.85)";
-      ctx.lineWidth = 2;
+    ctx.restore();
+  }
+
+  function drawPad(x, w, h) {
+    const gy = groundY();
+    ctx.save();
+    ctx.fillStyle = "rgba(255,230,90,0.18)";
+    ctx.strokeStyle = "rgba(255,230,90,0.95)";
+    ctx.lineWidth = 2;
+    rr(x, gy-h, w, h, 8);
+    ctx.fill(); ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawOrb(x, y, r) {
+    const theme = THEMES[selected.theme];
+    ctx.save();
+    ctx.fillStyle = rgb(theme.orb, 0.14);
+    ctx.strokeStyle = rgb(theme.orb, 0.95);
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+    ctx.shadowColor = rgb(theme.orb, 0.9);
+    ctx.shadowBlur = 18;
+    ctx.beginPath(); ctx.arc(x, y, r+3, 0, Math.PI*2); ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawPortal(x, y, w, h, mult) {
+    const theme = THEMES[selected.theme];
+    ctx.save();
+    ctx.fillStyle = rgb(theme.portal, 0.12);
+    ctx.strokeStyle = rgb(theme.portal, 0.95);
+    ctx.lineWidth = 2;
+    rr(x - w/2, y, w, h, 16);
+    ctx.fill(); ctx.stroke();
+
+    // little arrow lines
+    ctx.globalAlpha = 0.8;
+    ctx.strokeStyle = "rgba(255,255,255,0.55)";
+    ctx.lineWidth = 2;
+    for (let i=0;i<3;i++){
+      const yy = y + 20 + i*28;
       ctx.beginPath();
-      ctx.moveTo(x, y+h);
-      ctx.lineTo(x+w*0.5, y);
-      ctx.lineTo(x+w, y+h);
+      ctx.moveTo(x - 12, yy);
+      ctx.lineTo(x + 10, yy);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(x + 10, yy);
+      ctx.lineTo(x + 2, yy - 8);
+      ctx.lineTo(x + 2, yy + 8);
       ctx.closePath();
-      ctx.fill(); ctx.stroke();
-      ctx.restore();
-      return;
+      ctx.stroke();
     }
 
-    if (type === 2) { // pad (floor)
-      const fy = floorY();
-      const w = o[2], h = o[3];
-      ctx.save();
-      ctx.fillStyle = "rgba(255,230,90,0.18)";
-      ctx.strokeStyle = "rgba(255,230,90,0.90)";
-      ctx.lineWidth = 2;
-      rr(x, fy-h, w, h, 8); ctx.fill(); ctx.stroke();
-      ctx.restore();
-      return;
-    }
+    // label
+    ctx.globalAlpha = 0.85;
+    ctx.fillStyle = "rgba(255,255,255,0.75)";
+    ctx.font = `${Math.max(12, (canvas.height*0.024)|0)}px system-ui`;
+    ctx.fillText(`x${mult.toFixed(2)}`, x - 18, y + h + 18);
 
-    if (type === 3) { // orb (air)
-      const yTop = o[2], r = o[3];
-      const y = yTop;
-      ctx.save();
-      ctx.globalAlpha = 0.95;
-      ctx.strokeStyle = "rgba(60,200,255,0.95)";
-      ctx.fillStyle = "rgba(60,200,255,0.12)";
-      ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI*2); ctx.fill(); ctx.stroke();
-      ctx.shadowColor = "rgba(60,200,255,0.9)";
-      ctx.shadowBlur = 18;
-      ctx.beginPath(); ctx.arc(x, y, r+3, 0, Math.PI*2); ctx.stroke();
-      ctx.restore();
-      return;
-    }
-
-    if (type === 4) { // portal (flip)
-      const yTop = o[2], w = o[3], h = o[4];
-      ctx.save();
-      ctx.globalAlpha = 0.85;
-      ctx.fillStyle = "rgba(180,80,255,0.12)";
-      ctx.strokeStyle = "rgba(180,80,255,0.95)";
-      ctx.lineWidth = 2;
-      rr(x - w/2, yTop, w, h, 16); ctx.fill(); ctx.stroke();
-
-      ctx.shadowColor = "rgba(180,80,255,0.9)";
-      ctx.shadowBlur = 22;
-      rr(x - w/2 + 2, yTop + 2, w-4, h-4, 16); ctx.stroke();
-      ctx.restore();
-    }
+    ctx.restore();
   }
 
   function drawPlayer() {
+    const theme = THEMES[selected.theme];
+    const gy = groundY();
     const px = player.x;
-    const py = playerCenterY();
+    const py = gy - player.s - player.y;
 
-    // trail
-    if (!liteToggle.checked) {
-      trailX[trailN % TRAIL_MAX] = px;
-      trailY[trailN % TRAIL_MAX] = py;
-      trailN++;
-      const n = Math.min(trailN, TRAIL_MAX);
-      for (let i=0;i<n;i++){
-        const idx = (trailN - 1 - i + TRAIL_MAX) % TRAIL_MAX;
-        const a = 0.18 - i * 0.008;
-        if (a <= 0) break;
-        ctx.globalAlpha = a;
-        ctx.fillStyle = "rgba(0,255,190,0.65)";
-        ctx.fillRect(trailX[idx]-2, trailY[idx]-2, 4, 4);
-      }
-      ctx.globalAlpha = 1;
-    }
-
-    // cube
+    // cube body
     ctx.save();
-    ctx.shadowColor = "rgba(0,255,190,0.95)";
+    ctx.shadowColor = rgb(theme.a, 0.95);
     ctx.shadowBlur = 18;
-    ctx.fillStyle = "rgba(0,255,190,0.20)";
-    ctx.strokeStyle = "rgba(0,255,190,0.90)";
+    ctx.fillStyle = rgb(theme.a, 0.18);
+    ctx.strokeStyle = rgb(theme.a, 0.9);
     ctx.lineWidth = 2;
 
-    const ang = world.t * 0.0022 * gravitySign; // spin direction flips (nice)
-    ctx.translate(px, py);
+    const ang = world.t * 0.0022;
+    ctx.translate(px + player.s/2, py + player.s/2);
     ctx.rotate(ang);
-    rr(-player.r, -player.r, player.r*2, player.r*2, 7);
+    rr(-player.s/2, -player.s/2, player.s, player.s, 8);
     ctx.fill(); ctx.stroke();
+
+    // FACE (mood per difficulty)
+    // Easy: happy
+    // Medium: focused
+    // Hard: angry
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = "rgba(255,255,255,0.9)";
+    ctx.strokeStyle = "rgba(255,255,255,0.9)";
+    ctx.lineWidth = 2;
+
+    const eyeY = -4;
+    // eyes
+    ctx.beginPath(); ctx.arc(-8, eyeY, 2.4, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc( 8, eyeY, 2.4, 0, Math.PI*2); ctx.fill();
+
+    if (selected.diff === "Easy") {
+      // smile
+      ctx.beginPath();
+      ctx.arc(0, 6, 10, 0.15*Math.PI, 0.85*Math.PI);
+      ctx.stroke();
+    } else if (selected.diff === "Medium") {
+      // straight mouth
+      ctx.beginPath();
+      ctx.moveTo(-10, 8);
+      ctx.lineTo(10, 8);
+      ctx.stroke();
+    } else {
+      // angry eyebrows + frown
+      ctx.beginPath();
+      ctx.moveTo(-12, -10); ctx.lineTo(-4, -6);
+      ctx.moveTo( 12, -10); ctx.lineTo( 4, -6);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(0, 12, 10, 1.15*Math.PI, 1.85*Math.PI);
+      ctx.stroke();
+    }
+
     ctx.restore();
   }
 
@@ -691,13 +665,13 @@
     ctx.save();
     ctx.globalAlpha = 0.85;
     ctx.fillStyle = "rgba(0,0,0,0.22)";
-    rr(14,14,320,46,14); ctx.fill();
+    rr(14,14,340,46,14); ctx.fill();
     ctx.fillStyle = "rgba(255,255,255,0.88)";
     ctx.font = `${(h*0.03)|0}px system-ui`;
 
     if (!player.alive) ctx.fillText("CRASHED — restarting…", 28, 44);
     else if (paused) ctx.fillText("PAUSED (P) • ESC menu", 28, 44);
-    else ctx.fillText("Jump: click/space • Orbs: tap in air • ESC menu", 28, 44);
+    else ctx.fillText("Jump: click/space • Orbs: tap mid-air", 28, 44);
     ctx.restore();
   }
 
@@ -706,11 +680,10 @@
     if (state !== "play") return;
 
     world.t += dt * 1000;
-    tapThisFrame = false; // will be set by input before next frame if tapped
 
     if (paused) return;
 
-    if (orbLock > 0) orbLock -= dt;
+    if (orbCD > 0) orbCD -= dt;
 
     // dead => auto restart
     if (!player.alive) {
@@ -719,121 +692,170 @@
       return;
     }
 
-    // run
-    world.x += selected.speed * dt;
+    // move
+    const speed = selected.baseSpeed * speedMult;
+    world.x += speed * dt;
 
     const prog = clamp(world.x / selected.length, 0, 1);
     runPctEl.textContent = `${(prog * 100) | 0}%`;
 
     // buffers
     if (buffer > 0) buffer -= dt;
-    if (player.onSurface) coyote = COYOTE_MAX;
+    if (player.onGround) coyote = COYOTE_MAX;
     else coyote = Math.max(0, coyote - dt);
 
-    // physics (offset-space)
+    // physics
     player.vy -= GRAV * dt;
     player.vy = Math.max(player.vy, MAXF);
-    player.offset += player.vy * dt;
+    player.y += player.vy * dt;
 
-    // clamp to surface
-    if (player.offset <= 0) {
-      player.offset = 0;
+    if (player.y <= 0) {
+      player.y = 0;
       player.vy = 0;
-      player.onSurface = true;
+      player.onGround = true;
     } else {
-      player.onSurface = false;
+      player.onGround = false;
     }
 
-    // buffered jump (only from surface/coyote)
-    if (buffer > 0 && (player.onSurface || coyote > 0)) {
+    // jump from ground/coyote
+    if (buffer > 0 && (player.onGround || coyote > 0)) {
       buffer = 0;
       coyote = 0;
       player.vy = JUMP;
-      player.onSurface = false;
+      player.onGround = false;
       sfx.jump();
     }
 
     // collisions
-    const fy = floorY();
+    const gy = groundY();
     const px = player.x;
-    const py = playerCenterY();
-    const obs = selected.obs;
+    const py = gy - player.s - player.y;
 
+    const obs = selected.obs;
     for (let i=0;i<obs.length;i++){
       const o = obs[i];
       const type = o[0];
 
-      // sorted by x for floor items; air items also sorted enough
+      // floor objects sorted-ish
       const ox = o[1] - world.x;
 
       // cull
-      if (type <= 2) {
+      if (type <= 3) {
         const ow = o[2];
-        if (ox + ow < -160) continue;
-        if (ox > canvas.width + 160) break;
-      } else {
-        if (ox < -220) continue;
+        if (ox + ow < -220) continue;
         if (ox > canvas.width + 220) break;
+      } else {
+        if (ox < -260) continue;
+        if (ox > canvas.width + 260) break;
       }
 
-      if (type === 2) { // pad
+      // spikes
+      if (type === 0) {
         const ow = o[2], oh = o[3];
-        const oy = fy - oh;
-        if (rectCircle(ox, oy, ow, oh, px, py, player.r*0.95) && player.offset <= 7) {
+        const sy = gy - oh;
+        // spike AABB (cheap but works)
+        if (aabbOverlap(px, py, player.s, player.s, ox, sy, ow, oh)) { die(); break; }
+        continue;
+      }
+
+      // pad
+      if (type === 3) {
+        const ow = o[2], oh = o[3];
+        const ry = gy - oh;
+        if (aabbOverlap(px, py, player.s, player.s, ox, ry, ow, oh) && player.y <= 8) {
           player.vy = PADJ;
-          player.onSurface = false;
+          player.onGround = false;
           buffer = 0; coyote = 0;
           sfx.pad();
         }
         continue;
       }
 
-      if (type === 1) { // block
-        const ow = o[2], oh = o[3];
-        const oy = fy - oh;
-        if (rectCircle(ox, oy, ow, oh, px, py, player.r*0.90)) { die(); break; }
-        continue;
-      }
+      // orb (tap mid-air near orb)
+      if (type === 4) {
+        const ox2 = ox;
+        const oy2 = o[2];
+        const r = o[3];
 
-      if (type === 0) { // spike
-        const ow = o[2], oh = o[3];
-        const sy = fy - oh;
-        if (spikeHit(ox, sy, ow, oh, px, py, player.r*0.90)) { die(); break; }
-        continue;
-      }
-
-      if (type === 3) { // orb
-        const oy = o[2], r = o[3];
-        // if close enough AND you tap while in air => boost
-        if (!player.onSurface && orbLock <= 0) {
-          const rr2 = (player.r + r + 6) ** 2;
-          if (dist2(px, py, ox, oy) <= rr2 && (buffer > 0)) {
-            // orb uses the tap (buffer) while airborne
+        if (!player.onGround && orbCD <= 0 && buffer > 0) {
+          const cx = px + player.s/2;
+          const cy = py + player.s/2;
+          const dx = cx - ox2;
+          const dy = cy - oy2;
+          const rr2 = (r + player.s*0.55) * (r + player.s*0.55);
+          if (dx*dx + dy*dy <= rr2) {
             buffer = 0;
-            orbLock = 0.12;
+            orbCD = 0.12;
             player.vy = ORBJ;
-            player.onSurface = false;
+            player.onGround = false;
             sfx.orb();
           }
         }
         continue;
       }
 
-      if (type === 4) { // portal flip
-        const yTop = o[2], pw = o[3], ph = o[4];
+      // speed portal
+      if (type === 5) {
+        const yTop = o[2], pw = o[3], ph = o[4], mult = o[5];
         const rx = ox - pw/2;
-        const ry = yTop;
-        if (rectCircle(rx, ry, pw, ph, px, py, player.r*0.92)) {
-          // prevent multi-trigger by using orbLock as a general cooldown
-          if (orbLock <= 0) {
-            orbLock = 0.20;
-            flipGravityKeepPosition();
-          }
+        if (aabbOverlap(px, py, player.s, player.s, rx, yTop, pw, ph)) {
+          // snap speed toward new mult smoothly
+          speedMult = lerp(speedMult, mult, 0.35);
+          sfx.portal();
         }
+        continue;
+      }
+
+      // blocks (standable + side death)
+      if (type === 1 || type === 2) {
+        const ow = o[2], oh = o[3];
+        const isFalling = (type === 2);
+
+        // falling sink (only when standing on it)
+        // sink makes the platform drop; if you stop jumping, it sinks into you and you die
+        const sunk = isFalling ? sink[i] : 0;
+
+        const topY = (gy - oh) + sunk;
+        const blockRect = { x: ox, y: topY, w: ow, h: oh };
+
+        // landing from above
+        const prevY = (gy - player.s - (player.y - player.vy * dt));
+        const nowY  = py;
+
+        const playerBottomPrev = prevY + player.s;
+        const playerBottomNow  = nowY + player.s;
+
+        const withinX = (px + player.s) > blockRect.x && px < (blockRect.x + blockRect.w);
+
+        if (withinX && player.vy <= 0 && playerBottomPrev <= blockRect.y && playerBottomNow >= blockRect.y) {
+          // land on top
+          player.y = (gy - player.s) - blockRect.y;
+          player.vy = 0;
+          player.onGround = true;
+
+          // sinking logic
+          if (isFalling) {
+            sink[i] += 160 * dt; // sink speed
+          }
+          continue;
+        }
+
+        // standing on it (keep sinking)
+        if (isFalling && player.onGround && withinX && Math.abs((py + player.s) - blockRect.y) < 3) {
+          sink[i] += 160 * dt;
+        }
+
+        // side/bottom hit = death
+        if (aabbOverlap(px, py, player.s, player.s, blockRect.x, blockRect.y, blockRect.w, blockRect.h)) {
+          die();
+          break;
+        }
+
         continue;
       }
     }
 
+    // win
     if (prog >= 1) win();
   }
 
@@ -843,14 +865,42 @@
     ctx.clearRect(0,0,canvas.width,canvas.height);
 
     drawBackground(ts);
-    drawLanes();
     drawDecor(ts);
+    drawGround();
 
     if (state === "play") {
+      const gy = groundY();
       const obs = selected.obs;
+
+      // draw obstacles
       for (let i=0;i<obs.length;i++){
-        drawObstacle(obs[i]);
+        const o = obs[i];
+        const type = o[0];
+
+        if (type <= 3) {
+          const ox = o[1] - world.x;
+          const w = o[2], h = o[3];
+          if (ox + w < -220) continue;
+          if (ox > canvas.width + 220) break;
+
+          if (type === 0) drawSpike(ox, w, h);
+          else if (type === 1) drawBlock(ox, w, h, false, 0);
+          else if (type === 2) drawBlock(ox, w, h, true, sink[i]);
+          else if (type === 3) drawPad(ox, w, h);
+        } else if (type === 4) {
+          const ox = o[1] - world.x;
+          if (ox < -260) continue;
+          if (ox > canvas.width + 260) break;
+          drawOrb(ox, o[2], o[3]);
+        } else if (type === 5) {
+          const ox = o[1] - world.x;
+          if (ox < -280) continue;
+          if (ox > canvas.width + 280) break;
+          drawPortal(ox, o[2], o[3], o[4], o[5]);
+        }
       }
+
+      // player
       drawPlayer();
       drawHUD();
     }
@@ -860,7 +910,7 @@
   let last = 0;
   function loop(ts) {
     if (!last) last = ts;
-    const dt = clamp((ts - last) / 1000, 0, 0.033);
+    const dt = clamp((ts - last)/1000, 0, 0.033);
     last = ts;
 
     update(dt);
@@ -868,7 +918,7 @@
     requestAnimationFrame(loop);
   }
 
-  // ---------- Menu boot ----------
+  // ---------- Boot ----------
   function boot() {
     renderLevels();
     updateBestUI();
@@ -877,17 +927,9 @@
     requestAnimationFrame(loop);
   }
 
-  // start only via Play
-  btnPlay.addEventListener("click", () => {
-    startRun();
-    if (musicToggle.checked) startMusic();
-  });
-
-  // audio permission helper
-  window.addEventListener("pointerdown", () => ensureAudio(), { once:true });
-
   boot();
 })();
+
 
 
 
